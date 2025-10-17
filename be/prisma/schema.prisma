@@ -1,0 +1,276 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          Int       @id @default(autoincrement())
+  name        String
+  email       String    @unique
+  password    String
+  phone       String?
+  roleId        Int
+  role          Role           @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  avatarUrl   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt DateTime?
+  isOnline  Boolean  @default(false) 
+  lastSeen  DateTime?
+
+  doctorProfile  DoctorProfile?
+  patientProfile PatientProfile?
+  notifications    Notification[] @relation("NotificationReceiver") 
+  sentNotifications Notification[] @relation("SenderRelation") 
+  appointmentsCreated Appointment[] @relation("PatientAppointments")
+  appointmentsHandled Appointment[] @relation("DoctorAppointments")
+  reviews        Review[]
+  refreshTokens RefreshToken[]
+
+  @@index([roleId])
+  @@index([email])
+}
+
+model DoctorProfile {
+  id             Int     @id @default(autoincrement())
+  userId         Int     @unique
+  specialization String
+  experience     Int
+  bio            String?
+  clinicName     String?
+  address        String?
+  pricePerSlot   Float?
+  user           User    @relation(fields: [userId], references: [id])
+  schedules      WorkSchedule[]
+  reviews        Review[]
+  services       Service[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([userId])
+  @@index([specialization])
+}
+
+model PatientProfile {
+  id             Int     @id @default(autoincrement())
+  userId         Int     @unique
+  gender         String?
+  dateOfBirth    DateTime?
+  medicalHistory String?
+  user           User @relation(fields: [userId], references: [id])
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model Appointment {
+  id             Int       @id @default(autoincrement())
+  patientId      Int
+  doctorId       Int
+  appointmentAt  DateTime
+  status         AppointmentStatus @default(PENDING)
+  reason         String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt DateTime?
+
+  patient        User @relation("PatientAppointments", fields: [patientId], references: [id])
+  doctor         User @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  serviceId Int?
+  service   Service? @relation(fields: [serviceId], references: [id])
+  medicalRecord  MedicalRecord?
+  payment        Payment?  @relation("AppointmentToPayment")
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([appointmentAt])
+  @@index([status])
+}
+
+model WorkSchedule {
+  id          Int    @id @default(autoincrement())
+  doctorId    Int
+  dayOfWeek   String // "Monday", "Tuesday", ...
+  startTime   String // "08:00"
+  endTime     String // "11:00"
+
+  doctor DoctorProfile @relation(fields: [doctorId], references: [id])
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([doctorId])
+  @@index([dayOfWeek])
+}
+
+model MedicalRecord {
+  id            Int @id @default(autoincrement())
+  appointmentId Int @unique
+  diagnosis     String
+  prescription  String?
+  notes         String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt DateTime?
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
+}
+
+model Review {
+  id          Int     @id @default(autoincrement())
+  doctorId    Int
+  patientId   Int
+  rating      Int
+  comment     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt DateTime?
+
+  doctor  DoctorProfile @relation(fields: [doctorId], references: [id])
+  patient User           @relation(fields: [patientId], references: [id])
+
+  @@index([doctorId])
+  @@index([patientId])
+  @@index([rating])
+}
+
+model Role {
+  id             Int       @id @default(autoincrement())
+  name        String @unique
+  description String
+
+  users       User[]
+  permissions Permission[] @relation("RolePermissions")
+
+  deletedAt DateTime?
+
+}
+
+model Permission {
+  id             Int       @id @default(autoincrement())
+  method      HTTPMethod
+  description String?
+  path        String
+  module      String     @default("") @db.VarChar(256)
+
+  roles Role[] @relation("RolePermissions")
+
+  createdAt   DateTime?   @default(now())
+  deletedAt DateTime?
+}
+
+model RefreshToken {
+  id             Int       @id @default(autoincrement())
+  refreshToken     String   @unique @db.VarChar(256)
+  expiredAt DateTime
+  createdAt DateTime @default(now())
+
+  userId Int
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiredAt])
+}
+
+model Service {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  price       Float
+  duration    Int       // số phút
+  doctorId    Int
+
+  doctor      DoctorProfile @relation(fields: [doctorId], references: [id])
+  appointments Appointment[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@index([doctorId])
+  @@index([price])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  title     String
+  content   String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Ai nhận thông báo
+  userId Int
+  user   User     @relation("NotificationReceiver", fields: [userId], references: [id])
+
+  // Ai gửi thông báo
+  senderId Int?
+  sender   User?    @relation("SenderRelation", fields: [senderId], references: [id])
+
+  deletedAt DateTime?
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+model Payment {
+  id             Int       @id @default(autoincrement())
+  appointmentId  Int       @unique // 👈 Bắt buộc để Prisma hiểu là 1-1
+  amount         Float
+  paymentMethod  String    @default("VNPAY")
+  status         PaymentStatus @default(PENDING)
+  transactionNo  String?
+  bankCode       String?
+  orderInfo      String?
+  payDate        DateTime?
+  responseCode   String?
+  txnRef         String?
+  secureHash     String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  appointment    Appointment @relation("AppointmentToPayment", fields: [appointmentId], references: [id])
+
+  @@index([status])
+  @@index([payDate])
+  @@index([paymentMethod])
+}
+
+enum PaymentStatus {
+  PENDING   // khởi tạo nhưng chưa thanh toán
+  SUCCESS   // thanh toán thành công
+  FAILED    // thanh toán thất bại
+  CANCELLED // người dùng hủy
+}
+
+
+enum HTTPMethod {
+  GET
+  POST
+  PUT
+  DELETE
+  PATCH
+  OPTIONS
+  HEAD
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
